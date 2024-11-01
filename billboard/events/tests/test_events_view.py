@@ -1,6 +1,5 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from django import setup
 from django.test import Client, TestCase
 from django.urls import reverse
 
@@ -17,15 +16,15 @@ class TestReadCreateEvent(TestCase):
     def setUpTestData(cls):
         cls.client = Client()
         cls.url = reverse("event_list_create")
-        cls.event_1 = Event.objects.create(
+        Event.objects.create(
             title="test_title",
             description="test_description",
-            meeting_time="2022-01-01 12:00:00",
+            meeting_time=datetime.now() + timedelta(days=15),
         )
-        cls.event_2 = Event.objects.create(
+        Event.objects.create(
             title="test_title_2",
             description="test_description_2",
-            meeting_time="2024-11-21 12:00:00",
+            meeting_time=datetime.now() - timedelta(days=15),
         )
 
     def test_can_read_event_list_by_anonymous(self):
