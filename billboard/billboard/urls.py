@@ -28,7 +28,7 @@ urlpatterns = [
     path("api/v1/users/", include("users.urls")),
     path("api/v1/events/", include("events.urls")),
     # Token
-    path("api/auth/", include("djoser.urls.authtoken")),
+    # path("api/auth/", include("djoser.urls.authtoken")),
     # JWT
     path("api/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("api/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
