@@ -1,10 +1,15 @@
 import logging
 import time
-from datetime import datetime
 
-logging.basicConfig(
-    filename="usersActivity.log", level=logging.NOTSET, format="%(message)s"
-)
+logger = logging.getLogger("usersActivityLogger")
+logger.setLevel(logging.INFO)
+
+#  create console handler and set level to info
+
+file_handler = logging.FileHandler("usersActivity.log")
+formatter = logging.Formatter("%(message)s")
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
 
 
 class usersActivityLogMiddleware:
@@ -16,9 +21,11 @@ class usersActivityLogMiddleware:
 
         username = request.user.username if request.user.username else "Anonymous"
 
-        request_data = f"{time.strftime("%m.%d.%Y %H:%M")} | " \
-                            f"{username} | URL={request.get_full_path()}"
+        request_data = (
+            f"{time.strftime("%m.%d.%Y %H:%M")} | "
+            f"{username} | URL={request.get_full_path()}"
+        )
 
-        logging.info(request_data)
+        logger.info(request_data)
 
         return response
