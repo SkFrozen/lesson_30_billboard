@@ -6,12 +6,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import Event
+from .permissions import IsAdminOrReadOnly
 from .serializers import EventSerializer, EventSubscribeSerializer
 
 
 class EventListCreateAPIView(generics.ListCreateAPIView):
     serializer_class = EventSerializer
     pagination_class = PageNumberPagination
+    permission_classes = (IsAdminOrReadOnly,)
 
     def get(self, request, *args, **kwargs):
         page = self.request.query_params.get("page", 1)
