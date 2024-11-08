@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta
+from tracemalloc import start
 
 from celery import shared_task
 from django.conf import settings
-from django.core.mail import send_mail
+from django.core.mail import send_mail, send_mass_mail
 from django.utils import timezone
 from users.models import User
 
@@ -10,56 +11,126 @@ from .models import Event
 
 
 @shared_task
-def sending_event_reminders_next_day() -> None:
+def sending_event_remind(event_id: int, emails: list) -> None:
     """
-    Task checks the available events for tomorrow after 00:00:00
-    and sends reminders to users who have subscribed to these event
+    The task is to send the user an email with a reminder of the upcoming event
     """
 
-    events = Event.objects.filter(meeting_time__gt=timezone.now())
-    next_day: str = datetime.strftime(datetime.now() + timedelta(days=1), "%d.%m.%Y")
-
-    if not events:
+    try:
+        event = Event.objects.get(id=event_id)
+    except Event.DoesNotExist:
         return
 
-    for event in events:
-        if datetime.strftime(event.meeting_time, "%d.%m.%Y") == next_day:
-            send_mail(
-                "Daily notifications",
-                f"Уведомляем вас, что вы согласились посетить {event.title}.\n"
-                f"{event.description}\n"
-                f"Мероприятие проходит завтра в {event.meeting_time:%H:%M} {event.location}",
-                settings.EMAIL_HOST_USER,
-                [user.email for user in event.users.all()],
-            )
+    if timezone.now() > event.meeting_time:
+        return
+
+    subcject = "Daily notifications"
+    message = (
+        f"Уведомляем вас, что вы согласились посетить {event.title}.\n"
+        f"{event.description}\n"
+        f"Начало мероприятия: {event.meeting_time:%#d %B (%A) в %H:%M} {event.location}"
+    )
+    limit = 10
+
+    for i in range(0, len(emails), limit):
+        messages = [
+            (subcject, message, settings.EMAIL_HOST_USER, [email])
+            for email in emails[i : i + limit]
+        ]
+        send_mass_mail((messages))
 
 
 @shared_task
-def sending_event_reminders_six_hour(event_id) -> None:
+def sending_event_reminders_next_day() -> None:
     """
-    ???????
+    The task is to check the available events for tomorrow after 00:00:00
+    and send reminders to users who have subscribed to these events
     """
-    event = Event.objects.get(id=event_id)
 
-    send_mail(
-        "Daily notifications",
-        f"Уведомляем вас, что вы согласились посетить {event.title}\n"
-        f"{event.description}\n"
-        f"Мероприяте начинается через 6 часов {event.location}",
-        settings.EMAIL_HOST_USER,
-        [user.email for user in event.users.all()],
+    now = timezone.now()
+    tomorrow_start = timezone.make_aware(
+        datetime(now.year, now.month, now.day) + timedelta(days=1)
     )
+    tomorrow_end = tomorrow_start + timedelta(days=1) - timedelta(seconds=1)
+    limit = 10
+    start_index = 0
+    end_index = limit
+    qs = Event.objects.filter(meeting_time__range=(tomorrow_start, tomorrow_end))[
+        start_index:end_index
+    ]
+
+    while qs:
+        for event in qs:
+            emails = [user.email for user in event.users.all()]
+
+            if emails:
+                sending_event_remind.delay(event.id, emails)
+
+        start_index += limit
+        end_index += limit
+        qs = Event.objects.filter(meeting_time__range=(tomorrow_start, tomorrow_end))[
+            start_index:end_index
+        ]
+
+
+@shared_task
+def sending_event_reminders_start_in_6_hours():
+
+    now = timezone.now()
+    today_start = timezone.make_aware(now.year, now.month, now.day)
+    todate_end = today_start + timedelta(days=1) - timedelta(seconds=1)
+    limit = 10
+    start_index = 0
+    end_index = limit
+    qs = Event.objects.filter(meeting_time__range=(today_start, todate_end))[
+        start_index:end_index
+    ]
+
+    while qs:
+        for event in qs:
+            emails = [user.email for user in event.users.all()]
+
+            if emails and (now + timedelta(hours=6)) <= event.meeting_time:
+                sending_event_remind.delay(event.id, emails)
+
+        start_index += limit
+        end_index += limit
+    qs = Event.objects.filter(meeting_time__range=(today_start, todate_end))[
+        start_index:end_index
+    ]
+
+
+@shared_task
+def sending_notification(event_id: int, emails: list) -> None:
+    """
+    The task is to send a notification to the user who has the notify is True
+    """
+    try:
+        event = Event.objects.get(id=event_id)
+    except Event.DoesNotExist:
+        return
+
+    subject = "Новое мероприятие"
+    message = (
+        f"Новое мероприятие: {event.title}!\n"
+        f"{event.description}\n"
+        f"Мероприятие проходит {event.meeting_time:%#d %B (%A) в %H:%M} {event.location}\n"
+    )
+    messages = [
+        (subject, message, settings.EMAIL_HOST_USER, [email]) for email in emails
+    ]
+    send_mass_mail(messages)
 
 
 @shared_task
 def sending_notification_event_post_save(event_id) -> None:
-    event = Event.objects.get(id=event_id)
+    """
+    The task is to send a notification when the event is saved
+    """
 
-    send_mail(
-        "New event created",
-        f"Новое мероприятие:  {event.title}.\n"
-        f"{event.description}\n"
-        f"Мероприятие проходит {event.meeting_time:%d.%m.%Y %H:%M}  {event.location}",
-        settings.EMAIL_HOST_USER,
-        [user.email for user in User.objects.all() if user.notify],
-    )
+    users = User.objects.filter(notify=True)
+    emails = list(users.values_list("email", flat=True))
+    limit = 10
+
+    for i in range(0, len(emails), limit):
+        sending_notification(event_id, emails[i : i + limit])
