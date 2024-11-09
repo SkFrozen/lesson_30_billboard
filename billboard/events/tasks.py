@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from tkinter import HORIZONTAL
 from tracemalloc import start
 
 from celery import shared_task
@@ -77,27 +78,29 @@ def sending_event_reminders_next_day() -> None:
 def sending_event_reminders_start_in_6_hours():
 
     now = timezone.now()
-    today_start = timezone.make_aware(now.year, now.month, now.day)
-    todate_end = today_start + timedelta(days=1) - timedelta(seconds=1)
+    today_start = timezone.make_aware(
+        datetime(now.year, now.month, now.day, now.hour) + timedelta(hours=6)
+    )
+    today_end = today_start + timedelta(hours=1) - timedelta(seconds=1)
     limit = 10
     start_index = 0
     end_index = limit
-    qs = Event.objects.filter(meeting_time__range=(today_start, todate_end))[
+    qs = Event.objects.filter(meeting_time__range=(today_start, today_end))[
         start_index:end_index
     ]
-
+    print(f"{today_start} : {today_end} - {qs}")
     while qs:
         for event in qs:
             emails = [user.email for user in event.users.all()]
 
-            if emails and (now + timedelta(hours=6)) <= event.meeting_time:
+            if emails:
                 sending_event_remind.delay(event.id, emails)
 
         start_index += limit
         end_index += limit
-    qs = Event.objects.filter(meeting_time__range=(today_start, todate_end))[
-        start_index:end_index
-    ]
+        qs = Event.objects.filter(meeting_time__range=(today_start, today_end))[
+            start_index:end_index
+        ]
 
 
 @shared_task
