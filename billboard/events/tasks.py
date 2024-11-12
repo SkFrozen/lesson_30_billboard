@@ -65,7 +65,7 @@ def sending_event_reminders_next_day() -> None:
             emails = [user.email for user in event.users.all()]
 
             if emails:
-                sending_event_remind.delay(event.id, emails)
+                sending_event_remind(event.id, emails)
 
         start_index += limit
         end_index += limit
@@ -76,29 +76,33 @@ def sending_event_reminders_next_day() -> None:
 
 @shared_task
 def sending_event_reminders_start_in_6_hours():
+    """
+    The task is to check the available events every hour,
+    which start in 6 hours and send reminders to users who have subscribed to these events
+    """
 
     now = timezone.now()
-    today_start = timezone.make_aware(
+    before_start = timezone.make_aware(
         datetime(now.year, now.month, now.day, now.hour) + timedelta(hours=6)
     )
-    today_end = today_start + timedelta(hours=1) - timedelta(seconds=1)
+    before_end = before_start + timedelta(hours=1) - timedelta(seconds=1)
     limit = 10
     start_index = 0
     end_index = limit
-    qs = Event.objects.filter(meeting_time__range=(today_start, today_end))[
+    qs = Event.objects.filter(meeting_time__range=(before_start, before_end))[
         start_index:end_index
     ]
-    print(f"{today_start} : {today_end} - {qs}")
+
     while qs:
         for event in qs:
             emails = [user.email for user in event.users.all()]
 
             if emails:
-                sending_event_remind.delay(event.id, emails)
+                sending_event_remind(event.id, emails)
 
         start_index += limit
         end_index += limit
-        qs = Event.objects.filter(meeting_time__range=(today_start, today_end))[
+        qs = Event.objects.filter(meeting_time__range=(before_start, before_end))[
             start_index:end_index
         ]
 
@@ -108,6 +112,7 @@ def sending_notification(event_id: int, emails: list) -> None:
     """
     The task is to send a notification to the user who has the notify is True
     """
+
     try:
         event = Event.objects.get(id=event_id)
     except Event.DoesNotExist:

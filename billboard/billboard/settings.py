@@ -14,6 +14,7 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
+from django.conf.global_settings import SILENCED_SYSTEM_CHECKS
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -30,11 +31,17 @@ SECRET_KEY = "django-insecure-7ulf*b(w()*m&vuh#&6fxb@_p249!6l_f26v**+#18jn30bpm^
 EMAIL_USER_MAIL = os.getenv("EMAIL_USER_MAIL")
 EMAIL_USER_PASSWORD = os.getenv("EMAIL_USER_PASSWORD")
 
+REDIS_USER_PASSWORD = os.getenv("REDIS_USER_PASSWORD")
+REDIS_USER_USERNAME = "default"
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
 ALLOWED_HOSTS = []
 
+SILENCED_SYSTEM_CHECKS = [
+    "rest_framework.W001",
+]
 
 # Application definition
 
@@ -192,8 +199,12 @@ SIMPLE_JWT = {
 }
 
 
-CELERY_BROKER_URL = "redis://127.0.0.1:6379/0"
-CELERY_RESULT_BACKEND = "redis://127.0.0.1:6379/0"
+CELERY_BROKER_URL = (
+    f"redis://{REDIS_USER_USERNAME}:{REDIS_USER_PASSWORD}@127.0.0.1:6379/0"
+)
+CELERY_RESULT_BACKEND = (
+    f"redis://{REDIS_USER_USERNAME}:{REDIS_USER_PASSWORD}@127.0.0.1:6379/0"
+)
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_TASK_ROUTES = {
     "events.tasks.sending_event_reminders_next_day": {
