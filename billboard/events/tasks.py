@@ -1,29 +1,18 @@
 from datetime import datetime, timedelta
-from tkinter import HORIZONTAL
-from tracemalloc import start
 
 from celery import shared_task
 from django.conf import settings
-from django.core.mail import send_mail, send_mass_mail
+from django.core.mail import send_mass_mail
 from django.utils import timezone
 from users.models import User
 
 from .models import Event
 
 
-@shared_task
-def sending_event_remind(event_id: int, emails: list) -> None:
+def send_event_reminder(event: Event, emails: list) -> None:
     """
-    The task is to send the user an email with a reminder of the upcoming event
+    The function sends users an email with a reminder about an upcoming event.
     """
-
-    try:
-        event = Event.objects.get(id=event_id)
-    except Event.DoesNotExist:
-        return
-
-    if timezone.now() > event.meeting_time:
-        return
 
     subcject = "Daily notifications"
     message = (
@@ -42,73 +31,43 @@ def sending_event_remind(event_id: int, emails: list) -> None:
 
 
 @shared_task
-def sending_event_reminders_next_day() -> None:
+def send_remind_before_event(before_start: int, before_end=1) -> None:
     """
-    The task is to check the available events for tomorrow after 00:00:00
-    and send reminders to users who have subscribed to these events
+    The task filters upcoming events by time and sends reminders to users
+
+    before_start: the time at which the search begins in hours
+    before_end: the time at which the search ends in hours
     """
 
     now = timezone.now()
-    tomorrow_start = timezone.make_aware(
-        datetime(now.year, now.month, now.day) + timedelta(days=1)
+    start = timezone.make_aware(
+        datetime(now.year, now.month, now.day, now.hour) + timedelta(hours=before_start)
     )
-    tomorrow_end = tomorrow_start + timedelta(days=1) - timedelta(seconds=1)
+    end = start + timedelta(hours=before_end)
+
     limit = 10
     start_index = 0
     end_index = limit
-    qs = Event.objects.filter(meeting_time__range=(tomorrow_start, tomorrow_end))[
-        start_index:end_index
-    ]
+    qs = Event.objects.filter(meeting_time__range=(start, end)).prefetch_related(
+        "users"
+    )[start_index:end_index]
 
     while qs:
         for event in qs:
             emails = [user.email for user in event.users.all()]
 
             if emails:
-                sending_event_remind(event.id, emails)
+                send_event_reminder(event, emails)
 
         start_index += limit
         end_index += limit
-        qs = Event.objects.filter(meeting_time__range=(tomorrow_start, tomorrow_end))[
-            start_index:end_index
-        ]
+        qs = Event.objects.filter(meeting_time__range=(start, end)).prefetch_related(
+            "users"
+        )[start_index:end_index]
 
 
 @shared_task
-def sending_event_reminders_start_in_6_hours():
-    """
-    The task is to check the available events every hour,
-    which start in 6 hours and send reminders to users who have subscribed to these events
-    """
-
-    now = timezone.now()
-    before_start = timezone.make_aware(
-        datetime(now.year, now.month, now.day, now.hour) + timedelta(hours=6)
-    )
-    before_end = before_start + timedelta(hours=1) - timedelta(seconds=1)
-    limit = 10
-    start_index = 0
-    end_index = limit
-    qs = Event.objects.filter(meeting_time__range=(before_start, before_end))[
-        start_index:end_index
-    ]
-
-    while qs:
-        for event in qs:
-            emails = [user.email for user in event.users.all()]
-
-            if emails:
-                sending_event_remind(event.id, emails)
-
-        start_index += limit
-        end_index += limit
-        qs = Event.objects.filter(meeting_time__range=(before_start, before_end))[
-            start_index:end_index
-        ]
-
-
-@shared_task
-def sending_notification(event_id: int, emails: list) -> None:
+def send_notification(event_id: int, emails: list) -> None:
     """
     The task is to send a notification to the user who has the notify is True
     """
@@ -131,7 +90,7 @@ def sending_notification(event_id: int, emails: list) -> None:
 
 
 @shared_task
-def sending_notification_event_post_save(event_id) -> None:
+def send_notification_event_post_save(event_id) -> None:
     """
     The task is to send a notification when the event is saved
     """
@@ -141,4 +100,4 @@ def sending_notification_event_post_save(event_id) -> None:
     limit = 10
 
     for i in range(0, len(emails), limit):
-        sending_notification(event_id, emails[i : i + limit])
+        send_notification(event_id, emails[i : i + limit])
